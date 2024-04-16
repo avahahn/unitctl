@@ -1,0 +1,13 @@
+[package]
+name = "unitctl"
+version = "0.1.0"
+edition = "2021"
+about = "A client to operate the NGINX Unit control API"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = { version = "4.5.4", features = ["derive"] }
+curl = "0.4.46"
+http = "1.1.0"
+yaml-rust = "0.4.5"
