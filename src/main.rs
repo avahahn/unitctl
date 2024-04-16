@@ -127,7 +127,7 @@ struct SchemaArgs {
         required = true,
         help = "path for schema query"
     )]
-    path: String,
+    path: String
 }
 
 fn do_start(args: StartArgs) {
@@ -233,6 +233,8 @@ fn get_schema(args: SchemaArgs) {
         let mut emitter = YamlEmitter::new(&mut out_str);
         emitter.dump(&pathspec).unwrap(); // dump the YAML object to a String
     }
+    
+    println!("{}", out_str);        
 }
 
 fn main() {
