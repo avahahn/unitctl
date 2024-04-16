@@ -9,8 +9,9 @@ use std::{
 use yaml_rust::{
     YamlLoader, YamlEmitter
 };
-
-use curl::easy::Easy;
+use curl::easy::{
+    Easy, NetRc
+};
 use http::Uri;
 
 const OAI_SPEC: &str = include_str!("../unit-openapi.yaml");
@@ -27,21 +28,10 @@ struct Cli {
 enum Commands {
     #[command(arg_required_else_help = true)]
     Start(StartArgs),
-
-    // TODO : Modify status call to point to some specific API endpoint    
-    #[command(arg_required_else_help = true)]
-    Status(StatusArgs),
     
-    // TODO : Validate calls with openapi spec
-    // TODO : Access over SSH
-    // TODO : Access within docker containers
-    // TODO : Support custom certs probably
-    // TODO : Turn on netrc support probably?
     #[command(arg_required_else_help = true)]
     API(APIArgs),
     
-    // TODO : Load spec from submodule instead of duplicate file
-    // TODO : Use an actual OpenAPI spec parser
     #[command(arg_required_else_help = true)]
     Schema(SchemaArgs),
 }
@@ -54,28 +44,6 @@ struct StartArgs {
         help = "path to desired control socket"
     )]
     socket: String
-}
-
-#[derive(Args, Clone)]
-struct StatusArgs {
-    #[arg(
-        short, long,
-        required = true,
-        help = "URI the control API listens on"
-    )]
-    uri: String,
-    
-    #[arg(
-        short, long,
-        help = "Unix Socket the control API listens on"
-    )]
-    socket: Option<String>,
-    
-    #[arg(
-        short, long,
-        help = "switch to trigger verbose behavior in libcurl"
-    )]
-    verbose: bool,
 }
 
 #[derive(Args, Clone)]
@@ -163,19 +131,7 @@ fn do_start(args: StartArgs) {
     println!("Current directory mounted to /www in NGINX Unit container.");
 }
 
-fn get_status(args: StatusArgs) {
-    do_api_call(APIArgs {
-        socket: args.socket,
-        uri: args.uri,
-        verbose: args.verbose,
-        json: None, file: None, 
-        delete: false,
-    })
-}
-
-fn do_api_call(args: APIArgs) {
-    let mut curl = Easy::new();
-
+fn do_api_call(args: APIArgs, mut curl: Easy) {
     if let Some(path) = args.socket {
         curl.unix_socket(path.as_str()).unwrap();
     } 
@@ -239,10 +195,12 @@ fn get_schema(args: SchemaArgs) {
 
 fn main() {
     let call = Cli::parse();
+    let mut curl = Easy::new();
+    curl.netrc(NetRc::Optional).unwrap();
+    
     match call.command {
         Commands::Start(args) => do_start(args),
-        Commands::Status(args) => get_status(args),
-        Commands::API(args) => do_api_call(args),
+        Commands::API(args) => do_api_call(args, curl),
         Commands::Schema(args) => get_schema(args),
     }
 }
