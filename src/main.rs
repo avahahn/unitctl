@@ -2,9 +2,7 @@ use clap::{
     Args, Parser, Subcommand
 };
 use std::{
-    fs, env,
-    io::Read, 
-    process::Command
+    env, fs, io::Read, process::Command
 };
 use yaml_rust::{
     YamlLoader, YamlEmitter
@@ -95,7 +93,13 @@ struct SchemaArgs {
         required = true,
         help = "path for schema query"
     )]
-    path: String
+    path: String,
+    
+    #[arg(
+        short, long,
+        help = "set this flag to search for endpoints that match a prefix"
+    )]
+    search: bool,
 }
 
 fn do_start(args: StartArgs) {
@@ -176,21 +180,36 @@ fn get_schema(args: SchemaArgs) {
     if spec[0]["paths"].is_badvalue() {
         eprintln!("Error: no paths in OpenAPI spec!")
     }
-    if spec[0]["paths"][path.path()].is_badvalue() {
-        eprintln!("Error: requested path not found.");
-        eprintln!("\tConsider checking manually:");
-        eprintln!("\thttps://github.com/nginx/unit/blob/master/docs/unit-openapi.yaml");
-        return;
-    }
     
-    let pathspec = spec[0]["paths"][path.path()].clone();
-    let mut out_str = String::new();
-    {
-        let mut emitter = YamlEmitter::new(&mut out_str);
-        emitter.dump(&pathspec).unwrap(); // dump the YAML object to a String
-    }
+    if !args.search {
+        // lookup case
+        if spec[0]["paths"][path.path()].is_badvalue() {
+            eprintln!("Error: requested path not found.");
+            eprintln!("\tConsider checking manually:");
+            eprintln!("\thttps://github.com/nginx/unit/blob/master/docs/unit-openapi.yaml");
+            return;
+        }
     
-    println!("{}", out_str);        
+        let pathspec = spec[0]["paths"][path.path()].clone();
+        let mut out_str = String::new();
+        {
+            let mut emitter = YamlEmitter::new(&mut out_str);
+            emitter.dump(&pathspec).unwrap(); // dump the YAML object to a String
+        }
+    
+        println!("{}", out_str);        
+    } else {
+        // search casessss
+        match spec[0]["paths"].as_hash() {
+            Some (map) => for (key, _) in map {
+                match key.as_str() {
+                    Some(k) if k.starts_with(path.path()) => println!("- {}", k),
+                    _ => () //continue
+                }
+            },
+            None => eprintln!("Error: paths value not a map"),
+        }
+    }
 }
 
 fn main() {
