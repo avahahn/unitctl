@@ -1,12 +1,15 @@
 # Unitctl
-A command line utility to access and control running instances of NGINX Unit.
+A command line utility for the access and control of running instances of NGINX Unit.
 
-# Building
-First build with `cargo build`. Then copy `target/debug/unitctl` to wherever you want.
+## Building
+First build with `cargo build`. Then copy `target/debug/unitctl` to wherever it is needed.
 
-# Usage
+Example:
 ```
-λ target/debug/unitctl
+λ cargo build 
+  ...  
+λ ln -s $(pwd)/target/debug/unitctl $HOME/bin
+λ unitctl 
 
 Usage: unitctl <COMMAND>
 
@@ -21,6 +24,15 @@ Options:
   -h, --help     Print help
   -V, --version  Print version
 ```
+
+## Usage
+Unitctl has many functions. 
+- It can start and mount a Unit container for your development environment.
+- It can make queries to a Unit control API.
+- It can print out the schema definition of an endpoint from the Unit control API.
+- It can help list out the endpoints you may need to query from the control API.
+
+### Starting a running Unit instance
 ```
 λ target/debug/unitctl start
 
@@ -30,43 +42,14 @@ Options:
   -s, --socket <SOCKET>  path to desired control socket
   -h, --help             Print help
 ```
-```
-λ target/debug/unitctl status
 
-Usage: unitctl status [OPTIONS] --uri <URI>
+Unitctl will load and start a local Unit container.
+When the container starts it will be on the host network.
+The current directory will be mounted to `/www` in the container.
+The user will have to specify a directory to mount the Unit control socket to.
+Whatever directory is specified will be mounted to `/var/run` in the Unit container. 
 
-Options:
-  -u, --uri <URI>        URI the control API listens on
-  -s, --socket <SOCKET>  Unix Socket the control API listens on
-  -v, --verbose          switch to trigger verbose behavior in libcurl
-  -h, --help             Print help
-```
-```
-λ target/debug/unitctl api
-
-Usage: unitctl api [OPTIONS] --uri <URI>
-
-Options:
-  -u, --uri <URI>        URI for API operation
-  -s, --socket <SOCKET>  Unix Socket the control API listens on
-  -j, --json <JSON>      inline JSON data to post to API
-  -f, --file <FILE>      file containing data to post to API.
-  -d, --delete           switch to trigger a delete operation on an API endpoint.
-  -v, --verbose          switch to trigger verbose behavior in libcurl
-  -h, --help             Print help
-```
-```
-λ target/debug/unitctl schema
-
-Usage: unitctl schema --path <PATH>
-
-Options:
-  -p, --path <PATH>  path for schema query
-  -h, --help         Print help
-```
-
-# Examples
-Getting started:
+Example: 
 ```
 λ target/debug/unitctl start -s /tmp
 
@@ -81,73 +64,31 @@ NOTICE: Socket access is root only by default. Run chown.
 Current directory mounted to /www in NGINX Unit container.
 ```
 
-Healthy Status:
+### Working with the Unit API
 ```
-λ target/debug/unitctl status -s /tmp/control.unit.sock -u 'http://localhost/' -v
+λ unitctl api
 
-*   Trying /tmp/control.unit.sock:0...
-* Connected to localhost (/tmp/control.unit.sock) port 0
-> GET / HTTP/1.1
-Host: localhost
-Accept: */*
+Usage: unitctl api [OPTIONS] --uri <URI>
 
-* Request completely sent off
-< HTTP/1.1 200 OK
-< Server: Unit/1.32.1
-< Date: Tue, 16 Apr 2024 00:32:37 GMT
-< Content-Type: application/json
-< Content-Length: 595
-< Connection: close
-< 
-{ {
-        "certificates": {},
-        "js_modules": {},
-        "config": {
-                "listeners": {
-                        "*:80": {
-                                "pass": "routes"
-                        }
-                },
-
-                "routes": [
-                        {
-                                "match": {
-                                        "headers": {
-                                                "accept": "*text/html*"
-                                        }
-                                },
-
-                                "action": {
-                                        "share": "/usr/share/unit/welcome/welcome.html"
-                                }
-                        },
-                        {
-                                "action": {
-                                        "share": "/usr/share/unit/welcome/welcome.md"
-                                }
-                        }
-                ]
-        },
-
-        "status": {
-                "connections": {
-                        "accepted": 0,
-                        "active": 0,
-                        "idle": 0,
-                        "closed": 0
-                },
-
-                "requests": {
-                        "total": 0
-                },
-
-                "applications": {}
-        }
-}
-* Closing connection
+Options:
+  -u, --uri <URI>        URI for API operation
+  -s, --socket <SOCKET>  Unix Socket the control API listens on
+  -j, --json <JSON>      inline JSON data to post to API
+  -f, --file <FILE>      file containing data to post to API.
+  -d, --delete           switch to trigger a delete operation on an API endpoint.
+  -v, --verbose          switch to trigger verbose behavior in libcurl
+  -h, --help             Print help
 ```
 
-Querying the API:
+Unitctl can act as an API client for the Unit Control API. 
+A user will need to specify a URL to connect to, with the API endpoint specified as well.
+Use of the `json` or `file` flags will result in a put request being made.
+The Delete flag can be used to send a delete request.
+
+Optionally, a user can specify a unix domain socket filepath with the `socket` flag.
+When this flag is specified the user should continue to prepend their URIs with `http://localhost`.
+
+Example:
 ```
 λ target/debug/unitctl api -s /tmp/control.unit.sock -u 'http://localhost/config' -v
 
@@ -194,7 +135,30 @@ Accept: */*
 * Closing connection
 ```
 
-Getting API Documentation:
+Additional customization can be done with the User's `~/.netrc` file or with libcurl environment variables.
+For more information on `.netrc` see 
+[The Curl project's .netrc documentation](https://everything.curl.dev/usingcurl/netrc.html).
+For more information on applicable environment variables see
+[The libcurl documentation](https://curl.se/libcurl/c/libcurl-env.html).
+
+### Querying the Unit Control API schema
+```
+λ unitctl schema
+
+Usage: unitctl schema [OPTIONS] --path <PATH>
+
+Options:
+  -p, --path <PATH>  path for schema query
+  -s, --search       set this flag to search for endpoints that match a prefix
+  -h, --help         Print help
+\
+```
+
+Unitctl can act as a schema browser for the Unit Control API as well.
+The user may either specify path to dump schema per endpoint, or may also add the `search` flag 
+to search for endpoints prefixed by the given path fragment.
+
+Example of an API endpoint schema:
 ```
 λ target/debug/unitctl schema -p /status/connections/idle
 
@@ -216,4 +180,26 @@ get:
           examples:
             Idle:
               value: 4
+```
+
+Example of a search for endpoints:
+```
+λ unitctl schema --search --path /config/lis
+
+- /config/listeners
+- /config/listeners/{listenerName}
+- /config/listeners/{listenerName}/pass
+- /config/listeners/{listenerName}/tls
+- /config/listeners/{listenerName}/tls/conf_commands
+- /config/listeners/{listenerName}/tls/session
+- /config/listeners/{listenerName}/tls/session/tickets
+- /config/listeners/{listenerName}/tls/session/tickets/{arrayIndex}
+- /config/listeners/{listenerName}/tls/certificate
+- /config/listeners/{listenerName}/tls/certificate/{arrayIndex}
+- /config/listeners/{listenerName}/forwarded
+- /config/listeners/{listenerName}/forwarded/client_ip
+- /config/listeners/{listenerName}/forwarded/protocol
+- /config/listeners/{listenerName}/forwarded/recursive
+- /config/listeners/{listenerName}/forwarded/source
+- /config/listeners/{listenerName}/forwarded/source/{arrayIndex}
 ```
