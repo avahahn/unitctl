@@ -34,13 +34,16 @@ Unitctl has many functions.
 
 ### Starting a running Unit instance
 ```
-λ target/debug/unitctl start
+λ unitctl start
 
-Usage: unitctl start --socket <SOCKET>
+Usage: unitctl start [OPTIONS] --socket <SOCKET>
 
 Options:
   -s, --socket <SOCKET>  path to desired control socket
+  -i, --image <IMAGE>    image tag for the unit container [default: latest]
+  -r, --repo <REPO>      alternate docker repository for custom unit images [default: nginx/unit]
   -h, --help             Print help
+
 ```
 
 Unitctl will load and start a local Unit container.

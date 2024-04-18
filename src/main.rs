@@ -41,7 +41,21 @@ struct StartArgs {
         required = true,
         help = "path to desired control socket"
     )]
-    socket: String
+    socket: String,
+
+    #[arg(
+        short, long,
+        help = "image tag for the unit container",
+        default_value = "latest", // TODO : change to hardcoded git tag passed at build time
+    )]
+    image: String,
+
+    #[arg(
+        short, long,
+        help = "alternate docker repository for custom unit images",
+        default_value = "nginx/unit"
+    )]
+    repo: String,
 }
 
 #[derive(Args, Clone)]
@@ -110,8 +124,9 @@ struct SchemaArgs {
 }
 
 fn do_start(args: StartArgs) {
+    let image = format!("{}:{}", args.repo, args.image);
     Command::new("docker")
-        .args(["pull", "unit"])
+        .args(["pull", image.as_str()])
         .spawn()
         .expect("failed to call Docker")
         .wait()
@@ -171,6 +186,12 @@ fn do_api_call(args: APIArgs, mut curl: Easy) {
         curl.post_fields_copy(data.as_bytes());
 
         if args.put {
+            // do not actually use a put request
+            // it will not use the copied post field
+            // as of April 2024 there is a bug in the libcurl binding
+            // where the data buffer gets sent multiple times when using
+            // the read function callback.
+            // this is simpler and safer.
             curl.custom_request("PUT");
         }
 
