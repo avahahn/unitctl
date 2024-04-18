@@ -2,7 +2,7 @@ use clap::{
     Args, Parser, Subcommand
 };
 use std::{
-    env, fs, io::Write, process::Command
+    env, fs, process::Command
 };
 use yaml_rust::{
     YamlLoader, YamlEmitter
@@ -53,7 +53,7 @@ struct StartArgs {
     #[arg(
         short, long,
         help = "alternate docker repository for custom unit images",
-        default_value = "nginx/unit"
+        default_value = "unit"
     )]
     repo: String,
 }
@@ -146,7 +146,7 @@ fn do_start(args: StartArgs) {
         .args(["run", "-d",
             "--mount", appmount.as_str(),
             "--mount", sockmount.as_str(),
-            "--network", "host", "unit"])
+            "--network", "host", image.as_str()])
         .spawn()
         .expect("failed to call Docker")
         .wait()
@@ -183,7 +183,7 @@ fn do_api_call(args: APIArgs, mut curl: Easy) {
             format!("Content-Length: {}", data.as_bytes().len() as u64).as_str()
         ).unwrap();
         curl.http_headers(headers).unwrap();
-        curl.post_fields_copy(data.as_bytes());
+        curl.post_fields_copy(data.as_bytes()).unwrap();
 
         if args.put {
             // do not actually use a put request
@@ -192,7 +192,7 @@ fn do_api_call(args: APIArgs, mut curl: Easy) {
             // where the data buffer gets sent multiple times when using
             // the read function callback.
             // this is simpler and safer.
-            curl.custom_request("PUT");
+            curl.custom_request("PUT").unwrap();
         }
 
         curl.perform().unwrap();
