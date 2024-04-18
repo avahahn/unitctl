@@ -2,13 +2,13 @@ use clap::{
     Args, Parser, Subcommand
 };
 use std::{
-    env, fs, io::Read, process::Command
+    env, fs, io::Write, process::Command
 };
 use yaml_rust::{
     YamlLoader, YamlEmitter
 };
 use curl::easy::{
-    Easy, NetRc
+    Easy, NetRc, List
 };
 use http::Uri;
 
@@ -26,10 +26,10 @@ struct Cli {
 enum Commands {
     #[command(arg_required_else_help = true)]
     Start(StartArgs),
-    
+
     #[command(arg_required_else_help = true)]
     API(APIArgs),
-    
+
     #[command(arg_required_else_help = true)]
     Schema(SchemaArgs),
 }
@@ -47,7 +47,7 @@ struct StartArgs {
 #[derive(Args, Clone)]
 struct APIArgs {
     #[arg(
-        short, long, 
+        short, long,
         required = true,
         help = "URI for API operation"
     )]
@@ -58,26 +58,33 @@ struct APIArgs {
         help = "Unix Socket the control API listens on"
     )]
     socket: Option<String>,
-    
+
     #[arg(
-        short, long, 
+        short, long,
         conflicts_with = "file",
         help = "inline JSON data to post to API"
     )]
     json: Option<String>,
-       
+
     #[arg(
         short, long,
-        help = "file containing data to post to API."
+        help = "file containing JSON data to post to API."
     )]
     file: Option<String>,
-       
+
     #[arg(
         short, long,
         help = "switch to trigger a delete operation on an API endpoint.",
         conflicts_with_all = ["file", "json"]
     )]
     delete: bool,
+
+    #[arg(
+        short, long,
+        help = "switch to trigger a put operation on an API endpoint",
+        conflicts_with = "delete",
+    )]
+    put: bool,
 
     #[arg(
         short, long,
@@ -94,7 +101,7 @@ struct SchemaArgs {
         help = "path for schema query"
     )]
     path: String,
-    
+
     #[arg(
         short, long,
         help = "set this flag to search for endpoints that match a prefix"
@@ -109,27 +116,27 @@ fn do_start(args: StartArgs) {
         .expect("failed to call Docker")
         .wait()
         .expect("expected Docker to succeed");
-        
+
     let appmount = format!(
-        "type=bind,src={},dst=/www", 
+        "type=bind,src={},dst=/www",
         env::current_dir().unwrap().display()
         );
-    
+
     let sockmount = format!(
         "type=bind,src={},dst=/var/run/",
         args.socket
         );
-    
+
     Command::new("docker")
-        .args(["run", "-d", 
-            "--mount", appmount.as_str(), 
+        .args(["run", "-d",
+            "--mount", appmount.as_str(),
             "--mount", sockmount.as_str(),
             "--network", "host", "unit"])
         .spawn()
         .expect("failed to call Docker")
         .wait()
         .expect("expected Docker to succeed");
-        
+
     println!("Congratulations! NGINX Unit now running at {}/control.unit.sock", args.socket);
     println!("NOTICE: Socket access is root only by default. Run chown.");
     println!("Current directory mounted to /www in NGINX Unit container.");
@@ -138,33 +145,45 @@ fn do_start(args: StartArgs) {
 fn do_api_call(args: APIArgs, mut curl: Easy) {
     if let Some(path) = args.socket {
         curl.unix_socket(path.as_str()).unwrap();
-    } 
+    }
     curl.url(args.uri.as_str()).unwrap();
     curl.verbose(args.verbose).unwrap();
-    
+
     let contents: Option<String>;
     if let Some(path) = args.file {
+        if !path.ends_with(".json") {
+            // TODO : A more comprehensive check of the file contents
+            println!("warning: unitctl assumes file data contains valid JSON.")
+        }
         contents = Some(fs::read_to_string(path)
             .expect("Should have been able to read the file"));
     } else {
         contents = args.json;
     }
-    
-    if let None = contents {
+
+    if let Some(data) = contents {
+        let mut headers = List::new();
+        headers.append("Content-Type: application/json").unwrap();
+        headers.append(
+            format!("Content-Length: {}", data.as_bytes().len() as u64).as_str()
+        ).unwrap();
+        curl.http_headers(headers).unwrap();
+        curl.post_fields_copy(data.as_bytes());
+
+        if args.put {
+            curl.custom_request("PUT");
+        }
+
+        curl.perform().unwrap();
+    } else {
         curl.get(true).unwrap();
         if let Err(e) = curl.perform() {
             eprintln!("error in API call: {}", e)
         }
-    } else {
-        curl.post(true).unwrap();
-        curl.post_field_size(contents.clone().unwrap().len() as u64).unwrap();
-        let mut transfer = curl.transfer();
-        transfer.read_function(|buf| {
-            Ok(contents.clone().unwrap().as_bytes().read(buf).unwrap_or(0))
-        }).unwrap();
-        if let Err(e) = transfer.perform() {
-            eprintln!("error in API call: {}", e)
-        }
+    }
+
+    if !args.verbose {
+        println!("Response code: {}", curl.response_code().unwrap())
     }
 }
 
@@ -175,12 +194,12 @@ fn get_schema(args: SchemaArgs) {
         return
     }
     let path = maybe_path.unwrap();
-    
+
     let spec = YamlLoader::load_from_str(OAI_SPEC).unwrap();
     if spec[0]["paths"].is_badvalue() {
         eprintln!("Error: no paths in OpenAPI spec!")
     }
-    
+
     if !args.search {
         // lookup case
         if spec[0]["paths"][path.path()].is_badvalue() {
@@ -189,17 +208,16 @@ fn get_schema(args: SchemaArgs) {
             eprintln!("\thttps://github.com/nginx/unit/blob/master/docs/unit-openapi.yaml");
             return;
         }
-    
+
         let pathspec = spec[0]["paths"][path.path()].clone();
         let mut out_str = String::new();
         {
             let mut emitter = YamlEmitter::new(&mut out_str);
-            emitter.dump(&pathspec).unwrap(); // dump the YAML object to a String
+            emitter.dump(&pathspec).unwrap();
         }
-    
-        println!("{}", out_str);        
+
+        println!("{}", out_str);
     } else {
-        // search casessss
         match spec[0]["paths"].as_hash() {
             Some (map) => for (key, _) in map {
                 match key.as_str() {
@@ -216,7 +234,7 @@ fn main() {
     let call = Cli::parse();
     let mut curl = Easy::new();
     curl.netrc(NetRc::Optional).unwrap();
-    
+
     match call.command {
         Commands::Start(args) => do_start(args),
         Commands::API(args) => do_api_call(args, curl),
